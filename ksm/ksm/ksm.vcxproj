@@ -65,7 +65,8 @@
       <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
     </DriverSign>
     <ClCompile>
-      <PreprocessorDefinitions>POOL_NX_OPTIN;ENABLE_DBGPRINT;ENABLE_FILEPRINT;NESTED_VMX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>DBG;POOL_NX_OPTIN;ENABLE_DBGPRINT;EPAGE_HOOK;ENABLE_FILEPRINT;NESTED_VMX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
