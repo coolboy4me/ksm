@@ -451,7 +451,7 @@ extern struct vcpu *ksm_current_cpu(void);
 
 #ifdef EPAGE_HOOK
 /* page.c  */
-extern NTSTATUS ksm_hook_epage(void *original, void *redirect);
+extern NTSTATUS ksm_hook_epage(int pid, void *original, void *redirect);
 extern NTSTATUS ksm_unhook_page(void *original);
 extern NTSTATUS __ksm_unhook_page(struct page_hook_info *phi);
 extern struct page_hook_info *ksm_find_page(void *va);

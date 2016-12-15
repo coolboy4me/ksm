@@ -31,6 +31,7 @@ static inline void epage_init_eptp(struct page_hook_info *phi, struct ept *ept)
 	ept_alloc_page(ept, EPT4(ept, EPTP_RWHOOK), EPT_ACCESS_RW, dpa);
 	ept_alloc_page(ept, EPT4(ept, EPTP_NORMAL), EPT_ACCESS_EXEC, dpa);
 
+	//无效所有的mapping，触发ept violation
 	__invept_all();
 }
 
@@ -78,7 +79,7 @@ static void init_trampoline(struct trampoline *trampo, u64 to)
 STATIC_DEFINE_DPC(__do_hook_page, __vmx_vmcall, HYPERCALL_HOOK, ctx);
 STATIC_DEFINE_DPC(__do_unhook_page, __vmx_vmcall, HYPERCALL_UNHOOK, ctx);
 
-NTSTATUS ksm_hook_epage(void *original, void *redirect)
+extern NTSTATUS ksm_hook_epage(int pid, void *original, void *redirect)
 {
 	struct page_hook_info *phi = mm_alloc_pool(NonPagedPool, sizeof(*phi));
 	if (!phi)

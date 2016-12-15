@@ -34,6 +34,7 @@ static uintptr_t *ept_alloc_entry(struct ept *ept)
 
 static inline void ept_init_entry(uintptr_t *entry, uint8_t access, uintptr_t phys)
 {
+	//table 28-1
 	*entry ^= *entry;
 	*entry |= access & EPT_ACCESS_MAX_BITS;
 	*entry |= (phys >> PAGE_SHIFT) << PAGE_SHIFT;
@@ -499,7 +500,10 @@ static bool setup_vmcs(struct vcpu *vcpu, uintptr_t sp, uintptr_t ip, uintptr_t 
 
 	u32 vm_2ndctl = SECONDARY_EXEC_ENABLE_EPT | SECONDARY_EXEC_ENABLE_VPID |
 		/* NB: Desc table exiting makes windbg go maniac mode.  */
-		SECONDARY_EXEC_DESC_TABLE_EXITING | SECONDARY_EXEC_XSAVES |
+#ifndef DBG
+		SECONDARY_EXEC_DESC_TABLE_EXITING | 
+#endif
+		SECONDARY_EXEC_XSAVES |
 #ifndef EMULATE_VMFUNC
 		SECONDARY_EXEC_ENABLE_VMFUNC
 #endif

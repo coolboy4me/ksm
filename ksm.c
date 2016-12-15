@@ -94,6 +94,8 @@ static void init_io_bitmaps(struct ksm *k)
 
 static NTSTATUS set_lock_bit(void)
 {
+	//23.7
+	//
 	/* Required MSR_IA32_FEATURE_CONTROL bits:  */
 	const u64 required_feat_bits = FEATURE_CONTROL_LOCKED | FEATURE_CONTROL_VMXON_ENABLED_OUTSIDE_SMX;
 
@@ -116,6 +118,8 @@ static NTSTATUS __ksm_init_cpu(struct ksm *k)
 #ifndef __GNUC__
 	__try {
 #endif
+
+		//23.7
 		NTSTATUS status = set_lock_bit();
 		if (!NT_SUCCESS(status))
 			return status;
@@ -155,13 +159,16 @@ NTSTATUS ksm_init(void)
 	NTSTATUS status = STATUS_UNSUCCESSFUL;
 	int info[4];
 
+	//If CPUID.1:ECX.VMX[bit 5] = 1, then VMX operation is supported.
 	__cpuid(info, 1);
 	if (!(info[2] & (1 << (X86_FEATURE_VMX & 31))))
 		return STATUS_HV_CPUID_FEATURE_VALIDATION_ERROR;
 
+	//it enables VMX by setting CR4.VMXE[bit 13] = 1
 	if (__readcr4() & X86_CR4_VMXE)
 		return STATUS_HV_NOT_ALLOWED_WITH_NESTED_VIRT_ACTIVE;	/* closet...  */
 
+	//A.10
 	if (!ept_check_capabilitiy())
 		return STATUS_HV_FEATURE_UNAVAILABLE;
 
@@ -169,16 +176,17 @@ NTSTATUS ksm_init(void)
 	 * loader)  */
 	__stosq((unsigned long long *)&ksm, 0, sizeof(ksm) >> 3);
 
-	ksm.hotplug_cpu = KeRegisterProcessorChangeCallback(ksm_hotplug_cpu, NULL, 0);
-	if (!ksm.hotplug_cpu)
-		return status;
-
 	/* Caller cr3 (could be user)  */
 	ksm.origin_cr3 = __readcr3();
 	htable_init(&ksm.ht, rehash, NULL);
 
 	init_msr_bitmap(&ksm);
 	init_io_bitmaps(&ksm);
+
+	//放这里更合适
+	ksm.hotplug_cpu = KeRegisterProcessorChangeCallback(ksm_hotplug_cpu, NULL, 0);
+	if (!ksm.hotplug_cpu)
+		return status;
 
 	STATIC_CALL_DPC(__call_init, &ksm);
 	if (!NT_SUCCESS(status = STATIC_DPC_RET()))

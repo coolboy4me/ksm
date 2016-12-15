@@ -47,9 +47,27 @@ uintptr_t ppe_base = 0xfffff6fb7da00000ull;
 uintptr_t pde_base = 0xfffff6fb40000000ull;
 uintptr_t pte_base = 0xfffff68000000000ull;
 
+
+#define NT_DEVICE_NAME L"\\Device\\ksm"
+#define DOS_DEVICE_NAME L"\\DosDevices\\ksm"
+
 static void DriverUnload(PDRIVER_OBJECT driverObject)
 {
 	UNREFERENCED_PARAMETER(driverObject);
+	UNICODE_STRING uniWin32NameString;
+	PDEVICE_OBJECT deviceObject = driverObject->DeviceObject;
+
+	RtlInitUnicodeString(&uniWin32NameString, DOS_DEVICE_NAME);
+
+	IoDeleteSymbolicLink(&uniWin32NameString);
+
+	//ntStatus = UnSetupDispatchHandler()
+
+	if (deviceObject != NULL)
+	{
+		IoDeleteDevice(deviceObject);
+	}
+
 #ifdef ENABLE_ACPI
 	deregister_power_callback(&g_dev_ext);
 #endif
@@ -57,6 +75,113 @@ static void DriverUnload(PDRIVER_OBJECT driverObject)
 #ifdef DBG
 	print_exit();
 #endif
+}
+
+
+NTSTATUS
+CreateClose(
+	IN PDEVICE_OBJECT DeviceObject,
+	IN PIRP Irp
+	)
+{
+	Irp->IoStatus.Status = STATUS_SUCCESS;
+	Irp->IoStatus.Information = 0;
+
+	IoCompleteRequest(Irp, IO_NO_INCREMENT);
+
+	return STATUS_SUCCESS;
+}
+
+
+//通信定义
+#define		FILE_DEVICE_PH			0x00008821
+#define		PAGE_HACKING_CTL        (ULONG) CTL_CODE(FILE_DEVICE_PH, 0x808, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+typedef struct _R3HookInfo_
+{
+	int pid;
+	PVOID src;
+	PVOID dst;
+}R3HookInfo, *PR3HookInfo;
+
+BOOLEAN OnDeviceControl(IN PFILE_OBJECT FileObject,
+	IN BOOLEAN bWait,
+	IN PVOID InputBuffer, IN ULONG InputBufferLength,
+	OUT PVOID OutputBuffer, IN ULONG OutputBufferLength,
+	IN ULONG IoControlCode, OUT PIO_STATUS_BLOCK IoStatus,
+	IN PDEVICE_OBJECT DeviceObject)
+{
+	BOOLEAN bFailCheckFile = TRUE;
+	IoStatus->Status = STATUS_UNSUCCESSFUL;
+	IoStatus->Information = 0;
+
+	//set the status success
+	//set the information to 0 
+	switch (IoControlCode)
+	{
+	case PAGE_HACKING_CTL:
+	{
+		//do hook
+		PR3HookInfo pInfo = (PR3HookInfo)InputBuffer;
+		if (pInfo)
+			ksm_hook_epage(pInfo->pid, pInfo->src, pInfo->dst);
+	}
+	break;
+	default:
+		IoStatus->Status = STATUS_INVALID_DEVICE_REQUEST;
+		//return error
+		break;
+	}
+	return TRUE;
+}
+
+NTSTATUS
+DeviceControl(
+	IN PDEVICE_OBJECT DeviceObject,
+	IN PIRP pIrp
+	)
+{
+	PIO_STACK_LOCATION irpStack;
+	PVOID inputBuffer, outputBuffer;
+	ULONG inputBufferLength, outputBufferLength;
+	ULONG ioControlCode;
+
+	pIrp->IoStatus.Status = STATUS_SUCCESS;
+	pIrp->IoStatus.Information = 0;
+
+	irpStack = IoGetCurrentIrpStackLocation(pIrp);
+
+	//get the current Irp stack location 
+
+	if (irpStack->MajorFunction == IRP_MJ_DEVICE_CONTROL)
+	{
+		//we only need the device io control
+		inputBuffer = pIrp->AssociatedIrp.SystemBuffer;
+
+		inputBufferLength = irpStack->Parameters.DeviceIoControl.InputBufferLength;
+
+		outputBuffer = pIrp->AssociatedIrp.SystemBuffer;
+
+		outputBufferLength = irpStack->Parameters.DeviceIoControl.OutputBufferLength;
+
+
+		//system use the same buffer in device io control  
+
+		ioControlCode = irpStack->Parameters.DeviceIoControl.IoControlCode;
+
+
+		if ((ioControlCode & 3) == METHOD_NEITHER) {
+			outputBuffer = pIrp->UserBuffer;
+		}
+
+		OnDeviceControl(irpStack->FileObject, TRUE,
+			inputBuffer, inputBufferLength,
+			outputBuffer, outputBufferLength,
+			ioControlCode, &pIrp->IoStatus, DeviceObject);
+
+	}
+	IoCompleteRequest(pIrp, IO_NO_INCREMENT);
+	return STATUS_SUCCESS;
 }
 
 NTSTATUS DriverEntry(PDRIVER_OBJECT driverObject, PUNICODE_STRING registryPath)
@@ -68,17 +193,46 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT driverObject, PUNICODE_STRING registryPath)
 		return STATUS_ABANDONED;
 	}
 #endif
+	UNICODE_STRING  UniDeviceName;
+	UNICODE_STRING  UniSymLink;
 
+	RtlInitUnicodeString(&UniDeviceName, NT_DEVICE_NAME);
+
+	NTSTATUS status = IoCreateDevice(
+		driverObject,
+		0,
+		&UniDeviceName,
+		FILE_DEVICE_UNKNOWN,
+		FILE_DEVICE_SECURE_OPEN,
+		FALSE,
+		&driverObject);
+
+	if (!NT_SUCCESS(status))
+	{
+		return status;
+	}
+
+	RtlInitUnicodeString(&UniSymLink, DOS_DEVICE_NAME);
+	status = IoCreateSymbolicLink(&UniSymLink, &UniDeviceName);
+	if (!NT_SUCCESS(status))
+	{
+		DriverUnload(driverObject);
+		return status;
+	}
+	
 	/* On Windows 10 build 14316+ Page table base addresses are not static.  */
 	RTL_OSVERSIONINFOW osv;
 	osv.dwOSVersionInfoSize = sizeof(osv);
 
-	NTSTATUS status = RtlGetVersion(&osv);
+	status = RtlGetVersion(&osv);
 	if (!NT_SUCCESS(status))
 		return status;
 
 	LDR_DATA_TABLE_ENTRY *entry = driverObject->DriverSection;
 	PsLoadedModuleList = entry->InLoadOrderLinks.Flink;
+	driverObject->MajorFunction[IRP_MJ_CREATE] = CreateClose;
+	driverObject->MajorFunction[IRP_MJ_CLOSE] = CreateClose;
+	driverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = DeviceControl;
 	driverObject->DriverUnload = DriverUnload;
 
 	if (osv.dwMajorVersion >= 10 && osv.dwBuildNumber >= 14316) {
@@ -139,6 +293,8 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT driverObject, PUNICODE_STRING registryPath)
 	ksm_exit();
 #endif
 out:
+
+
 	VCPU_DEBUG("ret: 0x%08X\n", status);
 	return status;
 }
