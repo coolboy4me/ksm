@@ -99,7 +99,7 @@ CreateClose(
 
 typedef struct _R3HookInfo_
 {
-	int pid;
+	void* pid;
 	PVOID src;
 	PVOID dst;
 }R3HookInfo, *PR3HookInfo;
@@ -197,7 +197,7 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT driverObject, PUNICODE_STRING registryPath)
 	UNICODE_STRING  UniSymLink;
 
 	RtlInitUnicodeString(&UniDeviceName, NT_DEVICE_NAME);
-
+	PDEVICE_OBJECT pdeviceObject = NULL;
 	NTSTATUS status = IoCreateDevice(
 		driverObject,
 		0,
@@ -205,7 +205,7 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT driverObject, PUNICODE_STRING registryPath)
 		FILE_DEVICE_UNKNOWN,
 		FILE_DEVICE_SECURE_OPEN,
 		FALSE,
-		&driverObject);
+		&pdeviceObject);
 
 	if (!NT_SUCCESS(status))
 	{

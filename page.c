@@ -17,6 +17,8 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 #ifdef EPAGE_HOOK
+
+#include <ntifs.h>
 #include <ntddk.h>
 
 #include "ksm.h"
@@ -51,7 +53,7 @@ static struct phi_ops epage_ops = {
 static inline bool ht_cmp(const void *candidate, void *cmp)
 {
 	const struct page_hook_info *phi = candidate;
-	return phi->origin == (uintptr_t)cmp;
+	return phi->origin == (uintptr_t)cmp && phi->eprocess == PsGetCurrentProcess();
 }
 
 #include <pshpack1.h>
@@ -79,8 +81,12 @@ static void init_trampoline(struct trampoline *trampo, u64 to)
 STATIC_DEFINE_DPC(__do_hook_page, __vmx_vmcall, HYPERCALL_HOOK, ctx);
 STATIC_DEFINE_DPC(__do_unhook_page, __vmx_vmcall, HYPERCALL_UNHOOK, ctx);
 
-extern NTSTATUS ksm_hook_epage(int pid, void *original, void *redirect)
+extern NTSTATUS ksm_hook_epage(void* pid, void *original, void *redirect)
 {
+	NTSTATUS ns;
+	KAPC_STATE ApcState;
+	PEPROCESS ProcessObject = NULL;
+
 	struct page_hook_info *phi = mm_alloc_pool(NonPagedPool, sizeof(*phi));
 	if (!phi)
 		return STATUS_NO_MEMORY;
@@ -90,6 +96,10 @@ extern NTSTATUS ksm_hook_epage(int pid, void *original, void *redirect)
 		mm_free_pool(phi, sizeof(*phi));
 		return STATUS_INSUFFICIENT_RESOURCES;
 	}
+
+	ns = PsLookupProcessByProcessId((HANDLE)pid, &ProcessObject);
+
+	KeStackAttachProcess(ProcessObject, &ApcState);
 
 	/* Offset where code starts in this page  */
 	void *aligned = PAGE_ALIGN(original);
@@ -105,9 +115,12 @@ extern NTSTATUS ksm_hook_epage(int pid, void *original, void *redirect)
 	phi->d_pfn = __pa(original) >> PAGE_SHIFT;
 	phi->origin = (u64)aligned;
 	phi->ops = &epage_ops;
+	phi->eprocess = ProcessObject;
 
 	STATIC_CALL_DPC(__do_hook_page, phi);
 	htable_add(&ksm.ht, page_hash(phi->origin), phi);
+
+	KeUnstackDetachProcess(&ApcState);
 	return STATUS_SUCCESS;
 }
 
