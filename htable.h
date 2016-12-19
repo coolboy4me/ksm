@@ -6,6 +6,10 @@
 
 #include "compiler.h"
 
+#ifndef inline
+#define inline 
+#endif
+
 /**
  * struct htable - private definition of a htable.
  *

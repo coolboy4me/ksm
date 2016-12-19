@@ -105,6 +105,10 @@ static uintptr_t pte_top = 0xFFFFF6FFFFFFFFFFULL;
 #define __pa(va)		(uintptr_t)MmGetPhysicalAddress((void *)(va)).QuadPart
 #define __va(pa)		(uintptr_t *)MmGetVirtualForPhysical((PHYSICAL_ADDRESS) { .QuadPart = (pa) })
 
+#ifndef inline
+#define inline 
+#endif
+
 static inline uintptr_t *page_addr(uintptr_t *page)
 {
 	if (!page || !*page)
