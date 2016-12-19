@@ -2728,7 +2728,7 @@ bool vcpu_handle_exit(u64 *regs)
 	vcpu->ip = vmcs_read(GUEST_RIP);
 
 	u32 exit_reason = vmcs_read32(VM_EXIT_REASON);
-#ifdef DBG
+#ifdef MYDBG
 	prev_handler = curr_handler;
 #endif
 	curr_handler = (u16)exit_reason;

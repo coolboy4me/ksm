@@ -64,7 +64,7 @@
 #define VCPU_BUGCHECK_FAILED_VMENTRY	0xBAADBABE
 #define VCPU_BUGCHECK_GUEST_STATE	0xBAAD7A1E
 #define VCPU_BUGCHECK_UNEXPECTED	0xEEEEEEE9
-#ifdef DBG
+#ifdef MYDBG
 #define VCPU_BUGCHECK(a, b, c, d)	KeBugCheckEx(MANUALLY_INITIATED_CRASH, a, b, c, d)
 #else
 #define VCPU_BUGCHECK(a, b, c, d)	(void)0
@@ -79,7 +79,7 @@
 #define __func__ __FUNCTION__
 #endif
 
-#ifdef DBG
+#ifdef MYDBG
 #ifdef _MSC_VER
 #define VCPU_DEBUG(fmt, ...)		do_print("CPU %d: " __func__ ": " fmt, cpu_nr(), __VA_ARGS__)
 #define VCPU_DEBUG_RAW(str)		do_print("CPU %d: " __func__ ": " str, cpu_nr())
@@ -436,7 +436,7 @@ struct ksm {
 };
 extern struct ksm ksm;
 
-#ifdef DBG
+#ifdef MYDBG
 /* print.c  */
 extern NTSTATUS print_init(void);
 extern void print_exit(void);
@@ -565,7 +565,7 @@ static inline void __set_epte_ar_pfn(uintptr_t *epte, uintptr_t ar, uintptr_t pf
 	__set_epte_ar(epte, ar);
 }
 
-#ifdef DBG
+#ifdef MYDBG
 static inline const char *ar_get_bits(u8 ar)
 {
 	if (test_bit(ar, EPT_ACCESS_RWX))

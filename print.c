@@ -16,7 +16,7 @@
  * with this program; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
-#if defined(DBG) && (defined(ENABLE_DBGPRINT) || defined(ENABLE_FILEPRINT))
+#if defined(MYDBG) && (defined(ENABLE_DBGPRINT) || defined(ENABLE_FILEPRINT))
 
 /*
  * A stupid kernel debug printing interface so that we don't hang

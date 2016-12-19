@@ -418,7 +418,7 @@ static inline void adjust_ctl_val(u32 msr, u32 *val)
 	*val |= (u32)v;				/* bit == 1 in low word  ==> must be one  */
 }
 
-#ifdef DBG
+#ifdef MYDBG
 static inline unsigned char debug_vmx_vmwrite(const char *name, size_t field, size_t value)
 {
 	unsigned char ret = __vmx_vmwrite(field, value);
@@ -482,14 +482,14 @@ static bool setup_vmcs(struct vcpu *vcpu, uintptr_t sp, uintptr_t ip, uintptr_t 
 		msr_off = 0xC;
 
 	u32 vm_entry = VM_ENTRY_IA32E_MODE
-#ifndef DBG
+#ifndef MYDBG
 		| VM_ENTRY_CONCEAL_IPT
 #endif
 		;
 	adjust_ctl_val(MSR_IA32_VMX_ENTRY_CTLS + msr_off, &vm_entry);
 
 	u32 vm_exit = VM_EXIT_ACK_INTR_ON_EXIT | VM_EXIT_HOST_ADDR_SPACE_SIZE
-#ifndef DBG
+#ifndef MYDBG
 		| VM_EXIT_CONCEAL_IPT
 #endif
 		;
@@ -500,7 +500,7 @@ static bool setup_vmcs(struct vcpu *vcpu, uintptr_t sp, uintptr_t ip, uintptr_t 
 
 	u32 vm_2ndctl = SECONDARY_EXEC_ENABLE_EPT | SECONDARY_EXEC_ENABLE_VPID |
 		/* NB: Desc table exiting makes windbg go maniac mode.  */
-#ifndef DBG
+#ifndef MYDBG
 		SECONDARY_EXEC_DESC_TABLE_EXITING | 
 #endif
 		SECONDARY_EXEC_XSAVES |
@@ -515,7 +515,7 @@ static bool setup_vmcs(struct vcpu *vcpu, uintptr_t sp, uintptr_t ip, uintptr_t 
 #ifdef ENABLE_PML
 		| SECONDARY_EXEC_ENABLE_PML
 #endif
-#ifndef DBG
+#ifndef MYDBG
 		| SECONDARY_EXEC_CONCEAL_VMX_IPT
 #endif
 		;

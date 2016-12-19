@@ -72,7 +72,7 @@ static void DriverUnload(PDRIVER_OBJECT driverObject)
 	deregister_power_callback(&g_dev_ext);
 #endif
 	VCPU_DEBUG("ret: 0x%08X\n", ksm_exit());
-#ifdef DBG
+#ifdef MYDBG
 	print_exit();
 #endif
 }
@@ -186,7 +186,7 @@ DeviceControl(
 
 NTSTATUS DriverEntry(PDRIVER_OBJECT driverObject, PUNICODE_STRING registryPath)
 {
-#ifdef DBG
+#ifdef MYDBG
 	/* Stupid printing interface  */
 	if (!NT_SUCCESS(print_init())) {
 		DbgPrint("failed to initialize log!\n");
