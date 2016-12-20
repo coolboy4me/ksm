@@ -342,32 +342,9 @@ BOOL InitPageHack()
 	}
 	return TRUE;
 }
-
-
-volatile __declspec(naked) ULONG64 Asm_ReadMsr(ULONG Index)
-{
-	__asm{
-		mov	ecx, Index
-		rdmsr
-		ret
-	}
-}
-
-volatile __declspec(naked) void Asm_WriteMsr(ULONG Index, ULONG LowPart, ULONG HighPart)
-{
-	__asm{
-		mov	ecx, Index
-			mov	eax, LowPart
-			mov	edx, HighPart
-			wrmsr
-			ret
-	}
-}
-
-#define MSR_EFER 0xc0000080
 BOOL HookPage(PUCHAR Page)
 {
-	ULONG64 tmpEFER = 0;
+	ULONG32 tmp32 = 0;
 	PHARDWARE_PTE_X86PAE PointerPte;
 	__try {
 
@@ -392,9 +369,32 @@ BOOL HookPage(PUCHAR Page)
 		Execute Disable Bit Enable:
 		IA32_EFER.NXE (R/W)
 		*/
-		tmpEFER = Asm_ReadMsr(MSR_EFER);
-		tmpEFER |= (1 << 11);
-		Asm_WriteMsr(MSR_EFER, tmpEFER & 0xffffffff, tmpEFER >> 32);
+		__asm {
+			pushad
+			mov ecx, 0xc0000080
+				rdmsr
+				mov tmp32, eax
+				popad
+		}
+		tmp32 |= (1 << 11);
+		
+		__asm{
+			pushad
+				mov edx, 0
+				mov eax, tmp32
+				mov ecx, 0xc0000080
+				wrmsr
+				popad
+		}
+
+		tmp32 = 0;
+		__asm {
+			pushad
+				mov ecx, 0xc0000080
+				rdmsr
+				mov tmp32, eax
+				popad
+		}
 
 		if (PointerPte->Valid == 1) {
 			PointerPte->ExecuteDisable = 1;
@@ -606,7 +606,7 @@ ULONG32 OnPageFault(ULONG32 Eip,ULONG32 FaultAddress,ULONG32 ErrorCode,ULONG32 R
 
 ULONG32 __stdcall HandlePageFault(PPF_CONTEXT pPageFaulCtx)
 {
-
+	ULONG32 tmp32 = 0;
 	PEPROCESS Process;
 	PHARDWARE_PTE_X86PAE myPte;
 	ULONG32 FaultAddress =0;
@@ -625,6 +625,14 @@ ULONG32 __stdcall HandlePageFault(PPF_CONTEXT pPageFaulCtx)
 	{
 		//不是我们hook的
 		return PF_PASS_INT0E;
+	}
+
+	__asm {
+		pushad
+			mov ecx, 0xc0000080
+			rdmsr
+			mov tmp32, eax
+			popad
 	}
 
 	if (FaultAddress==Eip)
