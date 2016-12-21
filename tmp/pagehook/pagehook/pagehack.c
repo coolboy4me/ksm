@@ -9,8 +9,8 @@ ULONG volatile pfTotalCount = 0;
 PHK_LIST_ROOT_NODE PfList = { 0 };
 UCHAR g_SavedSwapPte[0x8]={0x90};
 BOOL bPAEOn=FALSE;
-BOOL bpfStepBreak=FALSE;
-ULONG32 dwPfEip=0;
+BOOL gBpfStepBreak=FALSE;
+ULONG32 gDwPfEip=0;
 PEPROCESS HackProcess=NULL;
 PVOID OldTrap01=NULL;
 PVOID OldTrap03 = NULL;
@@ -18,8 +18,8 @@ PVOID OldTrap0E=NULL;
 PHK_LIST_ROOT_NODE BpList = { 0 };
 void ClearPFStep()
 {
-	bpfStepBreak = FALSE;
-	dwPfEip = 0;
+	gBpfStepBreak = FALSE;
+	gDwPfEip = 0;
 }
 
 BOOLEAN    TestBit(ULONG value, ULONG bit)
@@ -313,6 +313,12 @@ DWORD GetKeInterlockedSwapPteAddress()
 	}
 	return 0;
 }
+
+typedef NTSTATUS(NTAPI *_KeSetAffinityThread)(
+	IN PKTHREAD Thread,
+	IN KAFFINITY Affinity
+	);
+extern ULONG32 SetIA32EFER();
 BOOL InitPageHack()
 {
 	DWORD dwKeInterlockedSwapPte=0;
@@ -340,14 +346,32 @@ BOOL InitPageHack()
 		OldTrap03 = (PVOID)MAKELONG(idt_entries[3].LowOffset, idt_entries[3].HiOffset);
 		DbgPrint("vmx:OldTrap03:%p\n", OldTrap03);
 	}
+
+
+	ULONG32 processors = KeQueryActiveProcessors();
+	ULONG32 tmp32 = 0;
+	PKTHREAD thread = KeGetCurrentThread();
+	_KeSetAffinityThread KeSetAffinityThread;
+	UNICODE_STRING ustrKeSetAffinityThread;
+	RtlInitUnicodeString(&ustrKeSetAffinityThread, L"KeSetAffinityThread");
+	KeSetAffinityThread = (_KeSetAffinityThread)MmGetSystemRoutineAddress(&ustrKeSetAffinityThread);
+	for (int i = 0; i < 32; i++)
+	{
+		KAFFINITY curProc = processors & (1 << i);
+		if (curProc != 0)
+		{
+			KeSetAffinityThread(thread, curProc);
+			SetIA32EFER();
+		}
+	}
+
 	return TRUE;
 }
+
 BOOL HookPage(PUCHAR Page)
 {
-	ULONG32 tmp32 = 0;
 	PHARDWARE_PTE_X86PAE PointerPte;
 	__try {
-
 
 		__asm
 		{      
@@ -359,42 +383,6 @@ BOOL HookPage(PUCHAR Page)
 
 		PointerPte = (PHARDWARE_PTE_X86PAE)MiGetPteAddressPae(Page);
 		//DbgPrint("vmx:HookPage:%p\n", PointerPte);
-		//table 4-10 
-		//IA32_EFER.NXE = 1; wrmsr
-		/*
-		
-		
-		Table 35-2. IA-32 Architectural MSRs (Contd.)
-		//11位  写1
-		Execute Disable Bit Enable:
-		IA32_EFER.NXE (R/W)
-		*/
-		__asm {
-			pushad
-			mov ecx, 0xc0000080
-				rdmsr
-				mov tmp32, eax
-				popad
-		}
-		tmp32 |= (1 << 11);
-		
-		__asm{
-			pushad
-				mov edx, 0
-				mov eax, tmp32
-				mov ecx, 0xc0000080
-				wrmsr
-				popad
-		}
-
-		tmp32 = 0;
-		__asm {
-			pushad
-				mov ecx, 0xc0000080
-				rdmsr
-				mov tmp32, eax
-				popad
-		}
 
 		if (PointerPte->Valid == 1) {
 			PointerPte->ExecuteDisable = 1;
@@ -640,7 +628,7 @@ ULONG32 __stdcall HandlePageFault(PPF_CONTEXT pPageFaulCtx)
 		//执行时
 		//设置单步,让DBTrap来工作
 		ULONG32 DbReturn = GetBP(Process,Eip,FALSE);
-		DbgPrint("vmx:页异常:%s[%p][%p]\n", PsGetProcessImageFileName(Process), FaultAddress, DbReturn);
+		//DbgPrint("vmx:页异常:%s[%p][%p]\n", PsGetProcessImageFileName(Process), FaultAddress, DbReturn);
 		if(DbReturn==0)
 		{
 			pPageFaulCtx->regEflags |= 0x100;
@@ -648,8 +636,8 @@ ULONG32 __stdcall HandlePageFault(PPF_CONTEXT pPageFaulCtx)
 			UnHookPage((PUCHAR)Eip);
 			//设置Swap状态和当前eip
 			SetPageStepBreak(Process, myPte, FALSE, TRUE, Eip);
-			bpfStepBreak = TRUE;
-			dwPfEip = Eip;
+			gBpfStepBreak = TRUE;
+			gDwPfEip = Eip;
 			return PF_CONTINUE_EXECUTION;
 		}
 		if (DbReturn == 3)//如果发生pf地址就是手动下断的地址，就恢复hook，就转到int3例程去处理了
@@ -683,7 +671,7 @@ ULONG32 __stdcall HandleTrap01(PDBTRAP_CONTEXT pTrapDbCtx)
 			if (bSB)
 			{
 				ULONG32 DbReturn = GetBP(Process,EipAddress,FALSE);
-				DbgPrint("vmx:单步异常:%s[%p][%p][%p]\n", PsGetProcessImageFileName(Process), EipAddress, OldEip, DbReturn);
+				//DbgPrint("vmx:单步异常:%s[%p][%p][%p]\n", PsGetProcessImageFileName(Process), EipAddress, OldEip, DbReturn);
 				if (DbReturn == 3)
 				{
 					//取消单步
@@ -716,16 +704,16 @@ ULONG32 __stdcall HandleTrap01(PDBTRAP_CONTEXT pTrapDbCtx)
 		}
 		else
 		{
-			if (bpfStepBreak)
+			if (gBpfStepBreak)
 			{
-				if (EipAddress!=dwPfEip)
+				if (EipAddress!=gDwPfEip)
 				{
 					//取消单步
 					pTrapDbCtx->regEflags &=~0x100;
 					//重新hook上次的页面
-					HookPage((PUCHAR)dwPfEip);
+					HookPage((PUCHAR)gDwPfEip);
 					//取消上次页面的单步
-					SetPageStepBreak(Process,(PHARDWARE_PTE_X86PAE)MiGetPteAddressPae(dwPfEip),FALSE,FALSE,0);
+					SetPageStepBreak(Process,(PHARDWARE_PTE_X86PAE)MiGetPteAddressPae(gDwPfEip),FALSE,FALSE,0);
 					ClearPFStep();
 					return DB_CONTINUE_EXECUTION;
 				}
@@ -745,7 +733,7 @@ volatile __declspec(naked) void MyPageFault()
 	__asm
 	{
 
-			pushad
+		pushad
 			pushfd
 			push ds
 			push es
@@ -760,9 +748,9 @@ volatile __declspec(naked) void MyPageFault()
 			pop eax
 
 			cli
-			mov eax,cr2
+			mov eax, cr2
 			push eax
-			mov eax,esp
+			mov eax, esp
 			push eax
 			call HandlePageFault
 			cmp eax, PF_PASS_INT0E
@@ -779,7 +767,7 @@ volatile __declspec(naked) void MyPageFault()
 			popfd
 			popad
 			add esp, 4
-			inc dword ptr[esp]
+			;inc dword ptr[esp]
 			
 			jmp OldTrap03
 DoIretd :
@@ -823,7 +811,7 @@ volatile __declspec(naked) void MyTrap01()
 	__asm
 	{
 
-			pushad
+		pushad
 			pushfd
 			push ds
 			push es
@@ -838,7 +826,7 @@ volatile __declspec(naked) void MyTrap01()
 			pop eax
 
 			cli
-			mov eax,esp
+			mov eax, esp
 			push eax
 			call HandleTrap01
 			cmp eax, DB_PASS_INT01
@@ -850,7 +838,7 @@ volatile __declspec(naked) void MyTrap01()
 			pop ds
 			popfd
 			popad
-			inc dword ptr[esp]
+			; inc dword ptr[esp]
 			jmp OldTrap03
 PassToTrap01 :
 			pop fs
@@ -875,7 +863,7 @@ ULONG32 GetDBHanlderAddress()
 BOOL IsPassToTrap01(ULONG32 Address)
 {
 	PEPROCESS Process= IoGetCurrentProcess();
-	if (bpfStepBreak)
+	if (gBpfStepBreak)
 	{
 		return FALSE;
 	}

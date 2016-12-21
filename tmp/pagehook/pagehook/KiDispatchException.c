@@ -25,11 +25,13 @@ VOID __stdcall MyKiDispatchException(
 			MmIsAddressValid(&TrapFrame->Eip) && MmIsAddressValid(&ExceptionRecord->ExceptionAddress) &&
 			MmIsAddressValid(&ExceptionRecord->ExceptionCode))
 		{
+#if 0
 			DbgPrint("vmx:KiDispatch[%s][%p][%p][%p]\n",
 				PsGetProcessImageFileName(PsGetCurrentProcess()),
 				TrapFrame->Eip,
 				ExceptionRecord->ExceptionAddress,
 				ExceptionRecord->ExceptionCode);
+#endif
 		}
 	}
 	CALL_NORNAL_API(OrgKiDispatchException, g_KiDispatchExceptionInfo)(

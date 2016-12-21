@@ -16,3 +16,5 @@ extern PEPROCESS g_debugProcess;
 BOOLEAN TestBit(ULONG value, ULONG bit);
 BOOLEAN bIsProcessDebuger(PEPROCESS process);
 PEPROCESS HandleToProcess(HANDLE hProcess, BOOL bThread);
+
+ULONG32 SetIA32EFER();
